@@ -1,36 +1,65 @@
 # USB Copyer
 
-**⚠ For study and research purposes only, please use for legal purposes**
+**⚠ 仅供学习和研究目的，请务必用于合法用途**
 
-- The program will traverses the directory of any USB disk after it is inserted, and copies all the files that meet the requirements to the specified location. 
-- The copying process does not affect the normal USB disk ejection and unplugging.
+本程序会在USB磁盘插入后自动遍历其目录，并将符合要求的文件复制到指定位置。复制过程不影响USB磁盘的正常弹出和拔出。
 
-## Usage
+## 功能特性
 
-1. Directly execute the main program. No pop-ups and windows will show. If you need to terminate the program, please use Task Manager to end the process.
-2. When a USB disk being inserted, the program opens a new thread responsible for its work: traversing the directory and copying files to the specified location by directory level, file type, file size, etc. as limited by the configuration file.
-3. If the USB disk is ejected during the copying process, it can be ejected normally without the occupancy prompt.
+- **后台静默运行**: 程序运行时不会显示任何窗口或弹出框，在后台静默运行。
+- **自动检测USB磁盘**:  当新的USB磁盘插入时，程序会自动检测并开始工作。
+- **可配置的文件复制**:  通过配置文件 `config.ini`，可以灵活配置复制的文件类型、大小、目录深度等限制条件。
+- **不影响USB磁盘弹出**:  即使在复制过程中，USB磁盘也可以正常弹出，不会出现占用提示。
+- **日志记录**:  程序运行日志会记录在 `.saved` 目录下，方便问题排查。
 
-## Config file
+## 使用方法
 
-**config.ini** will be generated when first executing the program.
+1.  **直接运行主程序** (`USBCopyer.exe` 或编译生成的可执行文件)。程序将在后台运行，不会显示任何界面。
+2.  **插入USB磁盘**。程序会自动检测到新插入的USB磁盘，并根据配置文件开始复制文件。
+3.  **程序配置**。首次运行时，程序会在当前目录下生成 `config.ini` 配置文件。您可以编辑此文件来修改程序的行为，例如：
+    -  设置最大搜索目录深度
+    -  设置复制启动延迟时间
+    -  限制复制的文件扩展名
+    -  限制复制的文件大小
+    -  自定义文件保存路径
+    -  设置跳过重复文件
+4.  **结束程序**。如果需要终止程序，请使用任务管理器结束进程。
+
+## 配置文件 `config.ini`
+
+首次运行程序时，会在程序所在目录生成 `config.ini` 配置文件。以下是配置文件的详细说明：
 
 ```ini
 [Main]
-# Maximum search directory depth, set to 0 for no limit
+# 最大搜索目录深度，设置为0表示无限制
 SearchMaxDepth=5
-# Delay time to wait before starting replication (seconds)
+# 复制启动延迟时间 (秒)
 DelayStart=30
-# Restrict the format of copied file extensions, with | separating the two extensions. Leave blank to indicate no restriction
+# 限制复制的文件扩展名，多个扩展名用 | 分隔。留空表示不限制
 FileExts=.doc|.ppt|.xls|.docx|.pptx|.xlsx|.txt|.pdf
-# Limit the maximum size of file copy, available in B/KB/MB/GB, set to 0 for no limit
+# 限制复制的文件最大大小，可以使用 B/KB/MB/GB 单位，设置为 0 表示无限制
 FileSizeLimit=1000MB
-# Destination file save directory, available placeholders: <date> - date string, <time> - time string, <drivelabel> - drive volume label
+# 目标文件保存目录，可用占位符: <date> - 日期字符串, <time> - 时间字符串, <drivelabel> - 驱动器卷标
 SavePath=./.saved/<date>_<time>_<drivelabel>/
 ```
 
-## Save & Log
+**配置项说明:**
 
-- In default, the save directory is `./.saved/<date>_<time>_<drivelabel>/`, and the directory `.saved` is hidden. You can access this directory by directly input its address in explorer.exe, or you can change target save path in config file.
+- `SearchMaxDepth`:  设置程序在USB磁盘中搜索目录的最大深度。0 表示不限制深度，程序会遍历所有目录。建议根据实际需求设置，避免遍历过深的目录导致程序运行时间过长。
+- `DelayStart`:  设置插入USB磁盘后，程序延迟多少秒开始复制文件。这可以避免在USB磁盘刚插入时立即开始复制，给系统留出一些准备时间。
+- `FileExts`:  限制要复制的文件扩展名。多个扩展名之间用 `|` 分隔。例如，`.doc|.txt|.pdf` 表示只复制 `.doc`, `.txt`, `.pdf` 文件。留空表示不限制文件扩展名，复制所有类型的文件。
+- `FileSizeLimit`:  限制要复制的文件最大大小。可以使用 `B`, `KB`, `MB`, `GB` 作为单位。例如，`10MB` 表示限制文件大小为 10MB。设置为 `0` 表示不限制文件大小，复制所有大小的文件。
+- `SavePath`:  设置文件保存的目标目录。可以使用以下占位符：
+    - `<date>`:  当前日期，格式为 `YYYYMMDD`。
+    - `<time>`:  当前时间，格式为 `HHMMSS`。
+    - `<drivelabel>`:  USB磁盘的卷标。
+    例如，`./.saved/<date>_<time>_<drivelabel>/` 表示将文件保存在 `.saved` 目录下，并以日期、时间、卷标作为子目录名。
 
-- By the way, logs will be output into directory `.saved`.
+## 保存目录和日志
+
+- 默认情况下，文件会保存在 `./.saved/<date>_<time>_<drivelabel>/` 目录下，`.saved` 目录是隐藏的。您可以通过在资源管理器中直接输入地址来访问此目录，或者在配置文件中修改目标保存路径。
+- 程序日志也会输出到 `.saved` 目录下。
+
+## 免责声明
+
+本程序仅供学习和研究目的使用。请务必遵守当地法律法规，用于合法用途。因非法使用本程序造成的任何后果，开发者概不负责。

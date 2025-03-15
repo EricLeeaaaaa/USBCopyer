@@ -37,14 +37,14 @@ void CopyRecursively(const filesystem::path& currentDir, const filesystem::path&
 					return;
 				if (!filesystem::create_directories(targetPath))
 				{
-					cout << "Fail to create copy target dir " << targetPath.u8string();
+					cout << "Fail to create copy target dir " << targetPath.string();
 					continue;
 				}
 				if (*exitSign)
 					return;
 
 				// recursively
-				printf("Go into dir %s\n", targetPath.u8string().c_str());
+				printf("Go into dir %s\n", targetPath.string().c_str());
 				CopyRecursively(fromPath, targetPath, depth + 1, exitSign);
 				if (*exitSign)
 					return;
@@ -58,7 +58,7 @@ void CopyRecursively(const filesystem::path& currentDir, const filesystem::path&
 				else
 				{
 					for (auto& ext : fileExts)
-						if (EndsWith(fromPath.u8string(), ext))
+						if (EndsWith(fromPath.string(), ext))
 						{
 							extMatched = true;
 							break;
@@ -70,7 +70,12 @@ void CopyRecursively(const filesystem::path& currentDir, const filesystem::path&
 					return;
 				if (extMatched && fileSizeOk)
 				{
-					printf("Copy %s -> %s\n", fromPath.u8string().c_str(), targetPath.u8string().c_str());
+				                if (GetSkipDuplicateFile() && filesystem::exists(targetPath))
+				                {
+				                    printf("Skip duplicate file %s\n", targetPath.string().c_str());
+				                    continue; // Skip to the next file
+				                }
+					printf("Copy %s -> %s\n", fromPath.string().c_str(), targetPath.string().c_str());
 					filesystem::copy(fromPath, targetPath, filesystem::copy_options::overwrite_existing);
 					if (*exitSign)
 						return;
@@ -103,7 +108,7 @@ unsigned int StartCopy(void* info)
 
 	string label = GetDeviceLabel(fromDir[0]);
 	if (label.empty())
-		label = string("╠╬╣ь╢еел") + fromDir[0];
+		label = string("О©╫О©╫О©╫ь╢О©╫О©╫О©╫") + fromDir[0];
 	ReplaceStr(targetDir, "<drivelabel>", label);
 	ReplaceStr(targetDir, "<date>", GetDateString());
 	ReplaceStr(targetDir, "<time>", GetTimeString());
