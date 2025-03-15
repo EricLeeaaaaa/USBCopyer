@@ -1,6 +1,9 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include "DeviceHandler.h"
 #include <iostream>
+#include <filesystem>
+#include "Config.h"
+using namespace std;
 
 HINSTANCE hInst;
 HWND hWnd;
@@ -53,6 +56,19 @@ bool CreateWnd(HINSTANCE hInstance)
     return true;
 }
 
+void InitLog()
+{
+    // debug console
+    //AllocConsole();
+    //freopen("CONOUT$", "w", stdout);
+
+    std::error_code ec;
+    filesystem::create_directories(".saved", ec);
+    SetFileAttributes(L".saved", FILE_ATTRIBUTE_HIDDEN);
+    freopen(".saved/output.log", "w", stdout);
+    setbuf(stdout, NULL);
+}
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
     _In_ LPWSTR    lpCmdLine,
@@ -61,17 +77,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
+    InitLog();
+
     // create window
     if (!CreateWnd(hInstance))
+    {
+        printf("Fail to create window\n");
         return -1;
+    }
+
+    // load config
+    InitConfig();
 
     // register notification
     RegisterDeviceNotify(hWnd);
 
-    AllocConsole();
-    freopen("CONOUT$", "w", stdout);
-
     // event loop
+    printf("[INFO] ready\n");
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0))
     {
