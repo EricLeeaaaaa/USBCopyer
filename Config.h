@@ -9,3 +9,4 @@ int GetDelayStart();
 std::vector<std::string>& GetFileExts();
 unsigned long long GetFileSizeLimit();
 std::string& GetSaveDir();
+bool GetSkipDuplicateFile();

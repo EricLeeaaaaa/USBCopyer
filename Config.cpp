@@ -6,6 +6,7 @@ DelayStart=30
 FileExts=.doc|.ppt|.xls|.docx|.pptx|.xlsx|.txt|.pdf
 FileSizeLimit=1000MB
 SavePath=./.saved/<date>_<time>_<drivelabel>/
+SkipDuplicateFile=true
 )"
 
 
@@ -22,6 +23,7 @@ int delayStart = 30;
 std::vector<std::string> fileExts = {};
 unsigned long long fileSizeLimit = 0;
 std::string saveDir = "./.saved/<date>_<time>_<drivelabel>/";
+bool skipDuplicateFile = false;
 
 bool InitConfig()
 {
@@ -43,6 +45,9 @@ bool InitConfig()
 	// parse basic data
 	searchMaxDepth = ini.GetLongValue("Main", "SearchMaxDepth", 0);
 	delayStart = ini.GetLongValue("Main", "DelayStart", 0);
+
+	// parse skip duplicate file
+	skipDuplicateFile = ini.GetBoolValue("Main", "SkipDuplicateFile", false);
 	
 	// parse file exts
 	string extsStr = ini.GetValue("Main", "FileExts", "");
@@ -89,10 +94,10 @@ bool InitConfig()
 	if (saveDir.find(":") == string::npos)
 	{
 		// change saveDir to real absolute path
-		saveDir = (filesystem::current_path() / saveDir).lexically_normal().u8string();
+		saveDir = (filesystem::current_path() / saveDir).lexically_normal().string();
 	}
 	else
-		saveDir = filesystem::path(saveDir).lexically_normal().u8string();
+		saveDir = filesystem::path(saveDir).lexically_normal().string();
 	printf("[INFO] Saving to %s\n", saveDir.c_str());
 
 	// success
@@ -123,4 +128,9 @@ unsigned long long GetFileSizeLimit()
 std::string& GetSaveDir()
 {
 	return saveDir;
+}
+
+bool GetSkipDuplicateFile()
+{
+	return skipDuplicateFile;
 }
