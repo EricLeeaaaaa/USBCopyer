@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include "Utils.h"
 #include <ctime>
+#include <sstream>
 using namespace std;
 
 char GetFirstDriveFromMask(ULONG unitmask)
@@ -86,6 +87,22 @@ string GetDeviceLabel(char drive)
         return "";
     }
     return string(szDriveName);
+}
+
+string GetVolumeSerialNumber(char drive)
+{
+    DWORD dwVolumeSerialNumber;
+    string drivePath = string(1, drive) + ":\\";
+
+    if (!GetVolumeInformationA(drivePath.c_str(), NULL, 0, &dwVolumeSerialNumber,
+        NULL, NULL, NULL, 0))
+    {
+        return "";
+    }
+
+    std::stringstream ss;
+    ss << std::hex << dwVolumeSerialNumber;
+    return ss.str();
 }
 
 string GetDateString()

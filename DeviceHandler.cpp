@@ -8,11 +8,15 @@
 #include <unordered_map>
 #include <filesystem>
 #include <thread>
+#include <mutex>
 using namespace std;
 
-#define WAIT_BEFORE_KILL_THREAD 100
-
 static const GUID GUID_DEVINTERFACE_USB_DEVICE = { 0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED} };
+
+std::mutex g_deviceMapMutex;
+unordered_map<char, HANDLE> copyerThreadMap;
+unordered_map<char, bool*> exitSignalMap;
+
 void RegisterDeviceNotify(HWND hWnd)
 {
     HDEVNOTIFY hDevNotify;
@@ -25,23 +29,22 @@ void RegisterDeviceNotify(HWND hWnd)
     printf("[INFO] Device notification registered.\n");
 }
 
-unordered_map<char, HANDLE> copyerThreadMap;
-unordered_map<char, bool*> exitSignalMap;
 void AddDevice(char drive)
 {
+    std::lock_guard<std::mutex> lock(g_deviceMapMutex);
+    
     bool* exitSign = new bool(false);
     exitSignalMap[drive] = exitSign;
 
     CopyInfoStruct* copyInfo = new CopyInfoStruct;
-    copyInfo->fromDir = string(1, drive) + ":\\";           // like D:\ 
-    copyInfo->targetDir = GetSaveDir();                     // like C:\aaa\b\ 
+    copyInfo->fromDir = string(1, drive) + ":\\";
+    copyInfo->targetDir = GetSaveDir();
     copyInfo->exitSign = exitSign;
 
     unsigned int threadId;
     HANDLE copyerThread = (HANDLE)_beginthreadex(NULL, 0, StartCopy, (void*)copyInfo, 0, &threadId);
     if (copyerThread != NULL)
     {
-        // start success
         copyerThreadMap[drive] = copyerThread;
     }
     else
@@ -50,6 +53,8 @@ void AddDevice(char drive)
 
 void RemoveDevice(char drive)
 {
+    std::lock_guard<std::mutex> lock(g_deviceMapMutex);
+
     auto iter = copyerThreadMap.find(drive);
     if (iter != copyerThreadMap.end())
     {
@@ -59,28 +64,32 @@ void RemoveDevice(char drive)
         DWORD exitCode;
         HANDLE hThread = iter->second;
         GetExitCodeThread(hThread, &exitCode);
-        if (exitCode == STILL_ACTIVE)           // if not exited
+        if (exitCode == STILL_ACTIVE)
         {
-            printf("[WARN] Copy thread working... ");
-            DWORD waitRes = WaitForSingleObject(hThread, WAIT_BEFORE_KILL_THREAD);
-            if (waitRes == WAIT_TIMEOUT || waitRes == WAIT_FAILED)
+            printf("[WARN] Copy thread is still working, waiting for it to finish gracefully...\n");
+            DWORD waitRes = WaitForSingleObject(hThread, 5000);
+            if (waitRes == WAIT_TIMEOUT)
             {
-                printf("terminated\n");
-                TerminateThread(hThread, 1);
+                printf("[ERROR] Thread did not exit gracefully after 5 seconds. It may exit later on its own.\n");
+                CloseHandle(hThread);
             }
             else
             {
                 printf("finished\n");
+                CloseHandle(hThread);
             }
-
-            delete exitSignal;
-            copyerThreadMap.erase(drive);
-            exitSignalMap.erase(drive);
         }
+        else
+        {
+             CloseHandle(hThread);
+        }
+
+        delete exitSignal;
+        copyerThreadMap.erase(drive);
+        exitSignalMap.erase(drive);
     }
 }
 
-// device change callback
 LRESULT DeviceChange(UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (wParam == DBT_DEVICEARRIVAL || wParam == DBT_DEVICEQUERYREMOVE || wParam == DBT_DEVICEREMOVECOMPLETE)
