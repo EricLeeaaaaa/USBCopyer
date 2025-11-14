@@ -33,7 +33,7 @@ if (*exitSign)
 return;
 if (!filesystem::create_directories(targetPath))
 {
-cout << "Fail to create copy target dir " << targetPath.string();
+printf("Fail to create copy target dir %s\n", targetPath.string().c_str());
 continue;
 }
 if (*exitSign)

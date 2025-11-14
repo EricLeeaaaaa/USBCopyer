@@ -39,8 +39,8 @@ DelayStart=30
 FileExts=.doc|.ppt|.xls|.docx|.pptx|.xlsx|.txt|.pdf
 # 限制复制的文件最大大小，可以使用 B/KB/MB/GB 单位，设置为 0 表示无限制
 FileSizeLimit=1000MB
-# 目标文件保存目录，可用占位符: <date> - 日期字符串, <time> - 时间字符串, <drivelabel> - 驱动器卷标
-SavePath=./.saved/<date>_<time>_<drivelabel>/
+# 目标文件保存目录，可用占位符: <date> - 日期字符串, <time> - 时间字符串, <drivelabel> - 驱动器卷标, <volumeserial> - 卷序列号
+SavePath=./.saved/<drivelabel>_<volumeserial>/
 ```
 
 **配置项说明:**
