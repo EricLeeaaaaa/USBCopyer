@@ -1,8 +1,9 @@
-#include <Windows.h>
 #include "Utils.h"
-#include <ctime>
 #include <sstream>
-using namespace std;
+#include <algorithm>
+#include <cctype>
+#include <iostream>
+#include <iomanip>
 
 char GetFirstDriveFromMask(ULONG unitmask)
 {
@@ -42,7 +43,7 @@ bool StartsWith(const std::string& str, const std::string& start) {
     size_t srcLen = str.size();
     size_t startLen = start.size();
     if (srcLen >= startLen) {
-        string temp = str.substr(0, startLen);
+        std::string temp = str.substr(0, startLen);
         if (temp == start)
             return true;
     }
@@ -54,7 +55,7 @@ bool EndsWith(const std::string& str, const std::string& end) {
     size_t srcLen = str.size();
     size_t endLen = end.size();
     if (srcLen >= endLen) {
-        string temp = str.substr(srcLen - endLen, endLen);
+        std::string temp = str.substr(srcLen - endLen, endLen);
         if (temp == end)
             return true;
     }
@@ -62,9 +63,9 @@ bool EndsWith(const std::string& str, const std::string& end) {
     return false;
 }
 
-string& ReplaceStr(string& str, const string& old_value, const string& new_value) {
-    for (string::size_type pos(0); pos != string::npos; pos += new_value.length()) {
-        if ((pos = str.find(old_value, pos)) != string::npos)
+std::string& ReplaceStr(std::string& str, const std::string& old_value, const std::string& new_value) {
+    for (std::string::size_type pos(0); pos != std::string::npos; pos += new_value.length()) {
+        if ((pos = str.find(old_value, pos)) != std::string::npos)
             str.replace(pos, old_value.length(), new_value);
         else
             break;
@@ -72,32 +73,32 @@ string& ReplaceStr(string& str, const string& old_value, const string& new_value
     return str;
 }
 
-string GetDeviceLabel(char drive)
+std::optional<std::string> GetDeviceLabel(char drive)
 {
     DWORD dwVolumeSerialNumber;
     DWORD dwMaximumComponentLength;
     DWORD dwFileSystemFlags;
     CHAR szFileSystemNameBuffer[1024];
     CHAR szDriveName[MAX_PATH];
-    string drivePath = string(1, drive) + ":\\";
+    std::string drivePath = std::string(1, drive) + ":\\";
 
     if (!GetVolumeInformationA(drivePath.c_str(), szDriveName, MAX_PATH, &dwVolumeSerialNumber,
         &dwMaximumComponentLength, &dwFileSystemFlags, szFileSystemNameBuffer, sizeof(szFileSystemNameBuffer)))
     {
-        return "";
+        return std::nullopt;
     }
-    return string(szDriveName);
+    return std::string(szDriveName);
 }
 
-string GetVolumeSerialNumber(char drive)
+std::optional<std::string> GetVolumeSerialNumber(char drive)
 {
     DWORD dwVolumeSerialNumber;
-    string drivePath = string(1, drive) + ":\\";
+    std::string drivePath = std::string(1, drive) + ":\\";
 
     if (!GetVolumeInformationA(drivePath.c_str(), NULL, 0, &dwVolumeSerialNumber,
         NULL, NULL, NULL, 0))
     {
-        return "";
+        return std::nullopt;
     }
 
     std::stringstream ss;
@@ -105,22 +106,77 @@ string GetVolumeSerialNumber(char drive)
     return ss.str();
 }
 
-string GetDateString()
+std::string GetDateString()
 {
-    time_t t = time(NULL);
-    tm ts;
-    localtime_s(&ts, &t);
-    char buf[24] = { 0 };
-    strftime(buf, 24, "%Y-%m-%d", &ts);
-    return string(buf);
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::tm tm;
+    localtime_s(&tm, &time_t);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d");
+    return oss.str();
 }
 
-string GetTimeString()
+std::string GetTimeString()
 {
-    time_t t = time(NULL);
-    tm ts;
-    localtime_s(&ts, &t);
-    char buf[24] = { 0 };
-    strftime(buf, 24, "%H-%M-%S", &ts);
-    return string(buf);
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::tm tm;
+    localtime_s(&tm, &time_t);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%H-%M-%S");
+    return oss.str();
+}
+
+std::optional<std::uintmax_t> ParseFileSize(const std::string& sizeStr)
+{
+    if (sizeStr.empty()) return 0;
+
+    std::string realNumStr;
+    int ratio = 0;
+    
+    if (EndsWith(sizeStr, "GB") || EndsWith(sizeStr, "gb"))
+    {
+        realNumStr = sizeStr.substr(0, sizeStr.size() - 2);
+        ratio = 30; // 2^30 = 1GB
+    }
+    else if (EndsWith(sizeStr, "MB") || EndsWith(sizeStr, "mb"))
+    {
+        realNumStr = sizeStr.substr(0, sizeStr.size() - 2);
+        ratio = 20; // 2^20 = 1MB
+    }
+    else if (EndsWith(sizeStr, "KB") || EndsWith(sizeStr, "kb"))
+    {
+        realNumStr = sizeStr.substr(0, sizeStr.size() - 2);
+        ratio = 10; // 2^10 = 1KB
+    }
+    else if (EndsWith(sizeStr, "B") || EndsWith(sizeStr, "b"))
+    {
+        realNumStr = sizeStr.substr(0, sizeStr.size() - 1);
+        ratio = 0; // bytes
+    }
+    else
+    {
+        realNumStr = sizeStr;
+        ratio = 0;
+    }
+
+    try 
+    {
+        // Remove whitespace
+        realNumStr.erase(std::remove_if(realNumStr.begin(), realNumStr.end(), ::isspace), realNumStr.end());
+        std::uintmax_t num = std::stoull(realNumStr);
+        return num << ratio;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[ERROR] Invalid FileSizeLimit value: " << sizeStr << ". Using 0 (unlimited).\n";
+        return std::nullopt;
+    }
 }

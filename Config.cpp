@@ -1,139 +1,76 @@
-#define CONFIG_FILE_PATH "config.ini"
-#define CONFIG_FILE_DEF_CONTENT \
-R"([Main]
+#include "Config.h"
+#include "Utils.h"
+#include <filesystem>
+#include <fstream>
+#include <SimpleIni.h>
+#include <algorithm>
+#include <cctype>
+#include <iostream>
+
+namespace fs = std::filesystem;
+
+// 使用原子变量保证线程安全
+std::atomic<int> searchMaxDepth{5};
+std::atomic<int> delayStart{30};
+std::vector<std::string> fileExts;
+std::atomic<std::uintmax_t> fileSizeLimit{0};
+std::string saveDir = "./.saved/<drivelabel>_<volumeserial>/";
+std::atomic<bool> skipDuplicateFile{false};
+
+bool InitConfig() {
+    const std::string configPath = "config.ini";
+    
+    if (!fs::exists(configPath)) {
+        std::ofstream fout(configPath);
+        fout << R"([Main]
 SearchMaxDepth=5
 DelayStart=30
 FileExts=.doc|.ppt|.xls|.docx|.pptx|.xlsx|.txt|.pdf
 FileSizeLimit=1000MB
 SavePath=./.saved/<drivelabel>_<volumeserial>/
 SkipDuplicateFile=true
-)"
+)";
+        return false;
+    }
 
+    CSimpleIniA ini;
+    ini.SetUnicode();
+    if (ini.LoadFile(configPath.c_str()) < 0) return false;
 
-#include "Config.h"
-#include "SimpleIni.h"
-#include <filesystem>
-#include <fstream>
-#include "Utils.h"
-#include <algorithm>
-#include <cctype>
+    // 使用原子操作更新配置
+    searchMaxDepth.store(ini.GetLongValue("Main", "SearchMaxDepth", 5));
+    delayStart.store(ini.GetLongValue("Main", "DelayStart", 30));
+    skipDuplicateFile.store(ini.GetBoolValue("Main", "SkipDuplicateFile", true));
 
-using namespace std;
+    // 文件扩展名处理
+    const auto extsStr = std::string(ini.GetValue("Main", "FileExts", ""));
+    fileExts = extsStr.empty() ? std::vector<std::string>{} : SplitStrWithPattern(extsStr, "|");
 
-CSimpleIniA ini;
-int searchMaxDepth = 5;
-int delayStart = 30;
-std::vector<std::string> fileExts = {};
-unsigned long long fileSizeLimit = 0;
-std::string saveDir = "./.saved/<drivelabel>_<volumeserial>/";
-bool skipDuplicateFile = false;
+    // 文件大小解析
+    const auto sizeLimitStr = std::string(ini.GetValue("Main", "FileSizeLimit", "0"));
+    if (const auto size = ParseFileSize(sizeLimitStr)) {
+        fileSizeLimit.store(*size);
+    } else {
+        fileSizeLimit.store(0);
+    }
 
-bool InitConfig()
-{
-if (!filesystem::exists(CONFIG_FILE_PATH))
-{
-ofstream fout(CONFIG_FILE_PATH);
-fout << CONFIG_FILE_DEF_CONTENT;
-fout.close();
-return false;
+    // 保存路径处理
+    saveDir = ini.GetValue("Main", "SavePath", "./.saved/<drivelabel>_<volumeserial>/");
+    if (saveDir.find(":") == std::string::npos) {
+        saveDir = (fs::current_path() / saveDir).lexically_normal().string();
+    } else {
+        saveDir = fs::path(saveDir).lexically_normal().string();
+    }
+
+    std::cout << "[INFO] Saving to " << saveDir << "\n";
+    std::cout << "[INFO] Config data loaded.\n";
+    return true;
 }
 
-ini.SetUnicode();
-SI_Error rc = ini.LoadFile(CONFIG_FILE_PATH);
-if (rc < 0)
-return false;
-
-searchMaxDepth = ini.GetLongValue("Main", "SearchMaxDepth", 0);
-delayStart = ini.GetLongValue("Main", "DelayStart", 0);
-
-skipDuplicateFile = ini.GetBoolValue("Main", "SkipDuplicateFile", false);
-
-string extsStr = ini.GetValue("Main", "FileExts", "");
-if (extsStr.empty())
-fileExts = {};
-else
-fileExts = SplitStrWithPattern(extsStr, "|");
-
-string sizeLimitStr = ini.GetValue("Main", "FileSizeLimit", "0");
-string realNumStr;
-int ratio;
-if (EndsWith(sizeLimitStr, "GB"))
-{
-realNumStr = sizeLimitStr.substr(0, sizeLimitStr.size() - 2);
-ratio = 30;
-}
-else if (EndsWith(sizeLimitStr, "MB"))
-{
-realNumStr = sizeLimitStr.substr(0, sizeLimitStr.size() - 2);
-ratio = 20;
-}
-else if (EndsWith(sizeLimitStr, "KB"))
-{
-realNumStr = sizeLimitStr.substr(0, sizeLimitStr.size() - 2);
-ratio = 10;
-}
-else if (EndsWith(sizeLimitStr, "B"))
-{
-realNumStr = sizeLimitStr.substr(0, sizeLimitStr.size() - 1);
-ratio = 0;
-}
-else
-{
-realNumStr = sizeLimitStr;
-ratio = 0;
-}
-
-try
-{
-realNumStr.erase(std::remove_if(realNumStr.begin(), realNumStr.end(), ::isspace), realNumStr.end());
-unsigned long long num = stoull(realNumStr);
-fileSizeLimit = num << ratio;
-}
-catch (const std::exception& e)
-{
-printf("[ERROR] Invalid FileSizeLimit value in config.ini: %s. Using 0 (unlimited).\n", sizeLimitStr.c_str());
-fileSizeLimit = 0;
-}
-
-saveDir = ini.GetValue("Main", "SavePath", "./.saved/<drivelabel>_<volumeserial>/");
-if (saveDir.find(":") == string::npos)
-{
-saveDir = (filesystem::current_path() / saveDir).lexically_normal().string();
-}
-else
-saveDir = filesystem::path(saveDir).lexically_normal().string();
-printf("[INFO] Saving to %s\n", saveDir.c_str());
-
-printf("[INFO] Config data loaded.\n");
-return true;
-}
-
-int GetSearchMaxDepth()
-{
-	return searchMaxDepth;
-}
-
-int GetDelayStart()
-{
-	return delayStart;
-}
-
-std::vector<std::string>& GetFileExts()
-{
-	return fileExts;
-}
-
-unsigned long long GetFileSizeLimit()
-{
-	return fileSizeLimit;
-}
-
-std::string& GetSaveDir()
-{
-	return saveDir;
-}
-
-bool GetSkipDuplicateFile()
-{
-	return skipDuplicateFile;
-}
+// 线程安全的访问器
+int GetSearchMaxDepth() { return searchMaxDepth.load(); }
+int GetDelayStart() { return delayStart.load(); }
+const std::vector<std::string>& GetFileExts() { return fileExts; }
+std::uintmax_t GetFileSizeLimit() { return fileSizeLimit.load(); }
+std::string GetSaveDir() { return saveDir; }
+bool GetSkipDuplicateFile() { return skipDuplicateFile.load(); }

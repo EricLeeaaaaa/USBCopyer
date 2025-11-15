@@ -1,9 +1,8 @@
-﻿#define _CRT_SECURE_NO_WARNINGS
 #include "DeviceHandler.h"
 #include <iostream>
 #include <filesystem>
 #include "Config.h"
-using namespace std;
+#include <Windows.h>
 
 HINSTANCE hInst;
 HWND hWnd;
@@ -32,8 +31,7 @@ bool CreateWnd(HINSTANCE hInstance)
     hInst = hInstance;
 
     // register windows class
-    WNDCLASSEXW wcex;
-    ZeroMemory(&wcex, sizeof(wcex));
+    WNDCLASSEXW wcex{};
     wcex.cbSize = sizeof(WNDCLASSEX);
 
     wcex.lpfnWndProc    = WndProc;
@@ -63,7 +61,7 @@ void InitLog()
     //freopen("CONOUT$", "w", stdout);
 
     std::error_code ec;
-    filesystem::create_directories(".saved", ec);
+    std::filesystem::create_directories(".saved", ec);
     SetFileAttributes(L".saved", FILE_ATTRIBUTE_HIDDEN);
     freopen(".saved/output.log", "w", stdout);
     setbuf(stdout, NULL);
@@ -82,7 +80,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // create window
     if (!CreateWnd(hInstance))
     {
-        printf("Fail to create window\n");
+        std::cout << "Fail to create window\n";
         return -1;
     }
 
@@ -93,7 +91,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     RegisterDeviceNotify(hWnd);
 
     // event loop
-    printf("[INFO] ready\n");
+    std::cout << "[INFO] ready\n";
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0))
     {

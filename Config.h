@@ -1,12 +1,15 @@
 #pragma once
 #include <vector>
 #include <string>
+#include <atomic>
+#include <cstdint>
 
 bool InitConfig();
 
+// 线程安全的配置访问器
 int GetSearchMaxDepth();
 int GetDelayStart();
-std::vector<std::string>& GetFileExts();
-unsigned long long GetFileSizeLimit();
-std::string& GetSaveDir();
+const std::vector<std::string>& GetFileExts();
+std::uintmax_t GetFileSizeLimit();
+std::string GetSaveDir();
 bool GetSkipDuplicateFile();

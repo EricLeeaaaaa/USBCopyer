@@ -1,158 +1,126 @@
 #include "Copyer.h"
-#include <iostream>
-#include <string>
-#include <filesystem>
 #include "Config.h"
 #include "Utils.h"
-using namespace std;
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <atomic>
+#include <iostream>
+#include <algorithm>
 
-void CopyRecursively(const filesystem::path& currentDir, const filesystem::path& targetDir, int depth, bool* exitSign)
-{
-const int maxDepth = GetSearchMaxDepth();
-const auto& fileExts = GetFileExts();
-const unsigned long long fileSizeLimit = GetFileSizeLimit();
+namespace fs = std::filesystem;
 
-if (*exitSign)
-return;
+// 文件元数据比较
+struct FileMetadata {
+    std::uintmax_t size;
+    fs::file_time_type lastWrite;
+};
 
-auto iter = filesystem::directory_iterator(currentDir);
-for (auto& it : iter)
-{
-try
-{
-if (*exitSign)
-return;
-auto fromPath = it.path();
-auto targetPath = targetDir / fromPath.filename();
-if (filesystem::is_directory(fromPath))
-{
-if (maxDepth > 0 && depth >= maxDepth)
-continue;
-
-if (*exitSign)
-return;
-if (!filesystem::create_directories(targetPath))
-{
-printf("Fail to create copy target dir %s\n", targetPath.string().c_str());
-continue;
-}
-if (*exitSign)
-return;
-
-printf("Go into dir %s\n", targetPath.string().c_str());
-CopyRecursively(fromPath, targetPath, depth + 1, exitSign);
-if (*exitSign)
-return;
-}
-else
-{
-bool extMatched = false;
-if (fileExts.empty())
-extMatched = true;
-else
-{
-for (auto& ext : fileExts)
-if (EndsWith(fromPath.string(), ext))
-{
-extMatched = true;
-break;
-}
-}
-bool fileSizeOk = (fileSizeLimit == 0 ? true : filesystem::file_size(fromPath) <= fileSizeLimit);
-
-if (*exitSign)
-return;
-if (extMatched && fileSizeOk)
-{
-if (GetSkipDuplicateFile() && filesystem::exists(targetPath))
-{
-try
-{
-auto from_size = filesystem::file_size(fromPath);
-auto target_size = filesystem::file_size(targetPath);
-auto from_time = filesystem::last_write_time(fromPath);
-auto target_time = filesystem::last_write_time(targetPath);
-
-if (from_size == target_size && from_time == target_time)
-{
-continue;
-}
-}
-catch(const filesystem::filesystem_error& e)
-{
-printf("[WARN] Could not compare file attributes for %s: %s\n", fromPath.string().c_str(), e.what());
-}
+std::optional<FileMetadata> GetFileMetadata(const fs::path& filePath) {
+    try {
+        return FileMetadata{
+            fs::file_size(filePath),
+            fs::last_write_time(filePath)
+        };
+    } catch (const fs::filesystem_error&) {
+        return std::nullopt;
+    }
 }
 
-printf("Copy %s -> %s\n", fromPath.string().c_str(), targetPath.string().c_str());
-try
-{
-auto from_time = filesystem::last_write_time(fromPath);
-filesystem::copy(fromPath, targetPath, filesystem::copy_options::overwrite_existing);
-if (*exitSign) return;
-filesystem::last_write_time(targetPath, from_time);
-}
-catch (const filesystem::filesystem_error& e)
-{
-printf("[ERROR] Failed to copy or set time for %s: %s\n", fromPath.string().c_str(), e.what());
+bool ShouldCopyFile(const fs::path& src, const fs::path& dest) {
+    if (!GetSkipDuplicateFile() || !fs::exists(dest)) {
+        return true;
+    }
+
+    const auto srcMeta = GetFileMetadata(src);
+    const auto destMeta = GetFileMetadata(dest);
+
+    return !srcMeta || !destMeta ||
+           (srcMeta->size != destMeta->size ||
+            srcMeta->lastWrite != destMeta->lastWrite);
 }
 
-if (*exitSign)
-return;
-}
-}
-}
-catch (const std::exception& e)
-{
-printf("[ERROR] Exception during copy operation near %s: %s\n", it.path().string().c_str(), e.what());
-if (*exitSign)
-return;
-}
-}
+void CopyRecursively(const fs::path& srcDir, const fs::path& destDir, int depth, const std::atomic<bool>& exitFlag) {
+    const int maxDepth = GetSearchMaxDepth();
+    const auto& allowedExts = GetFileExts();
+    const std::uintmax_t sizeLimit = GetFileSizeLimit();
+
+    try {
+        for (const auto& entry : fs::directory_iterator(srcDir)) {
+            if (exitFlag.load()) return;
+
+            const auto srcPath = entry.path();
+            const auto destPath = destDir / srcPath.filename();
+
+            if (entry.is_directory()) {
+                if (maxDepth > 0 && depth >= maxDepth) continue;
+
+                fs::create_directories(destPath);
+                CopyRecursively(srcPath, destPath, depth + 1, exitFlag);
+            }
+            else if (entry.is_regular_file()) {
+                // 文件扩展名检查
+                const bool extMatched = allowedExts.empty() ||
+                    std::any_of(allowedExts.begin(), allowedExts.end(),
+                        [&](const auto& ext) { return EndsWith(srcPath.string(), ext); });
+
+                // 文件大小检查
+                const bool sizeValid = (sizeLimit == 0) ||
+                    (entry.file_size() <= sizeLimit);
+
+                if (extMatched && sizeValid && ShouldCopyFile(srcPath, destPath)) {
+                    try {
+                        fs::copy_file(srcPath, destPath, fs::copy_options::overwrite_existing);
+
+                        // 保持原始时间戳
+                        if (const auto srcTime = fs::last_write_time(srcPath);
+                            !exitFlag.load()) {
+                            fs::last_write_time(destPath, srcTime);
+                        }
+
+                        std::cout << "Copy " << srcPath.string() << " -> " << destPath.string() << "\n";
+                    } catch (const fs::filesystem_error& e) {
+                        std::cerr << "[ERROR] Copy failed: " << e.what() << "\n";
+                    }
+                }
+            }
+        }
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "[ERROR] Directory traversal failed: " << e.what() << "\n";
+    }
 }
 
-unsigned int StartCopy(void* info)
-{
-int delay = GetDelayStart();
-if (delay > 0)
-{
-printf("Sleep %ds before start...\n", delay);
-Sleep(delay * 1000);
-}
+void StartCopy(const std::string& srcDir, std::string destDir) {
+    // 创建一个退出标志来控制此复制操作
+    std::atomic<bool> exitFlag{false};
 
-CopyInfoStruct* copyInfo = (CopyInfoStruct*)info;
-string fromDir = copyInfo->fromDir;
-string targetDir = copyInfo->targetDir;
-bool* exitSignal = copyInfo->exitSign;
-delete copyInfo;
+    // 延迟启动
+    const int delay = GetDelayStart();
+    if (delay > 0) {
+        std::cout << "Sleep " << delay << "s before start...\n";
+        std::this_thread::sleep_for(std::chrono::seconds(delay));
+    }
 
-char driveLetter = fromDir[0];
-string label = GetDeviceLabel(driveLetter);
-if (label.empty())
-label = string("NoLabel_") + driveLetter;
+    // 替换路径占位符
+    const char drive = srcDir[0];
+    if (const auto label = GetDeviceLabel(drive)) {
+        ReplaceStr(destDir, "<drivelabel>", *label);
+    }
+    if (const auto serial = GetVolumeSerialNumber(drive)) {
+        ReplaceStr(destDir, "<volumeserial>", *serial);
+    }
+    ReplaceStr(destDir, "<date>", GetDateString());
+    ReplaceStr(destDir, "<time>", GetTimeString());
 
-string serial = GetVolumeSerialNumber(driveLetter);
-if (serial.empty())
-serial = "UnknownSerial";
+    // 创建目标目录
+    std::error_code ec;
+    fs::create_directories(destDir, ec);
+    if (ec) {
+        std::cerr << "[ERROR] Failed to create directory: " << ec.message() << "\n";
+        return;
+    }
 
-ReplaceStr(targetDir, "<drivelabel>", label);
-ReplaceStr(targetDir, "<volumeserial>", serial);
-ReplaceStr(targetDir, "<date>", GetDateString());
-ReplaceStr(targetDir, "<time>", GetTimeString());
-
-std::error_code ec;
-if (!filesystem::exists(targetDir, ec))
-{
-filesystem::create_directories(targetDir, ec);
-if (ec)
-{
-printf("[ERROR] Failed to create target directory: %s\n", targetDir.c_str());
-return 1;
-}
-}
-
-printf("[INFO] Start syncing from %s -> %s\n", fromDir.c_str(), targetDir.c_str());
-CopyRecursively(fromDir, targetDir, 1, exitSignal);
-printf("[INFO] Sync process finished.\n");
-return 0;
+    std::cout << "[INFO] Start syncing from " << srcDir << " -> " << destDir << "\n";
+    CopyRecursively(srcDir, destDir, 1, exitFlag);
+    std::cout << "[INFO] Sync process finished.\n";
 }
